@@ -28,7 +28,7 @@ class session
 	public:
 		char REQUEST_METHOD[100];
 		char REQUEST_URI[100];
-		char QUERY_STRING[100];
+		char QUERY_STRING[1024];
 		char SERVER_PROTOCOL[100];
 		char HTTP_HOST[100];
 		char status_str[200] = "HTTP/1.1 200 OK\n";
@@ -81,7 +81,7 @@ class session
 						} else {
 							io_context.notify_fork(io_service::fork_child);
 							/* Parse input env */
-							char tmp[200];
+							char tmp[1124];
 							std::stringstream ss;
 							sscanf(data_,"%s %s %s\n\rHost: %s\n",
 							REQUEST_METHOD,tmp,SERVER_PROTOCOL,HTTP_HOST);

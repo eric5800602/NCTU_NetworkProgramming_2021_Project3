@@ -61,15 +61,20 @@ class session
 		session(int index,string host, string port,string f)
 			: client_socket(io_context[index])
 		{
+      if(host.length() == 0){
+        valid = false;
+        return;
+      }
       memset(data_,0,max_length);
       id = index;
       valid = true;
+      continue_sem = true;
       string filename = "./test_case/"+f;
       file_input.open(filename,ios::in);
       tcp::resolver resolve(io_context[index]);
       tcp::resolver::query query(host, port);
       boost::asio::ip::tcp::resolver::iterator iter = resolve.resolve(query);
-      client_socket.connect(iter->endpoint());
+      client_socket.async_connect(iter->endpoint(),[this](boost::system::error_code ec){if(!ec){start();}else{cerr << ec << endl;}});
       add_row(index,host,port);
 		}
 		void start()
@@ -77,6 +82,7 @@ class session
 			do_read();
 		}
     bool valid;
+    bool continue_sem;
 
 	private:
 		void do_read()
@@ -86,7 +92,10 @@ class session
           [this](boost::system::error_code ec, std::size_t length){
           if (!ec){
             output_shell(id,string(data_));
-            if(file_input.eof()) valid = false;
+            if(file_input.eof()){
+              cerr << id << " eof" << endl;
+              valid = false;
+            }
             char *ret;
             ret = strstr(data_, "%");
             memset(data_,0,max_length);
@@ -111,7 +120,13 @@ class session
       boost::asio::async_write(client_socket, boost::asio::buffer(input.c_str(), input.length()),
         [this](boost::system::error_code ec, std::size_t /*length*/){
           if (!ec){
-            return;
+             /*
+            continue_sem = true;
+            io_context[id].stop();
+            io_context[id].reset();
+            cerr << "test3" << endl;
+            return;*/
+            do_read();
         }});
     }
 
@@ -224,6 +239,7 @@ int main(int argc, char* argv[]){
     if((pos2 = QUERY_STRING.find("=")+1) != std::string::npos){
       token = QUERY_STRING.substr(pos2, QUERY_STRING.length());
       client[i].file = token;
+      i++;
     }
     ///cerr << getenv("QUERY_STRING") << endl;
     for(int j = 0;j < i;j++){
@@ -233,34 +249,23 @@ int main(int argc, char* argv[]){
       session s(j,client[j].host, client[j].port,client[j].file);
       io_context[j].run();
     }
-    if(client[0].host.length()!=0){
-      session s0(0,client[0].host, client[0].port,client[0].file);
-      io_context[0].run();
-    }
-    if(client[1].host.length()!=0){
-      session s1(1,client[1].host, client[1].port,client[1].file);
-      io_context[1].run();
-    }
-    if(client[2].host.length()!=0){
-      session s2(2,client[2].host, client[2].port,client[2].file);
-      io_context[2].run();
-    }
-    if(client[3].host.length()!=0){
-      session s3(3,client[3].host, client[3].port,client[3].file);
-      io_context[3].run();
-    }
-    if(client[4].host.length()!=0){
-      session s4(4,client[4].host, client[4].port,client[4].file);
-      io_context[4].run();
-    }
     /*
+    session s0(0,client[0].host, client[0].port,client[0].file);
+    session s1(1,client[1].host, client[1].port,client[1].file);
+    io_context[1].run();
+    session s2(2,client[2].host, client[2].port,client[2].file);
+    io_context[2].run();
+    session s3(3,client[3].host, client[3].port,client[3].file);
+    io_context[3].run();
+    session s4(4,client[4].host, client[4].port,client[4].file);
+    io_context[4].run();
     while(true){
       if(!(s0.valid || s1.valid || s2.valid || s3.valid || s4.valid)) break;
-      if(s0.valid) s0.start();
-      if(s1.valid) s1.start();
-      if(s2.valid) s2.start();
-      if(s3.valid) s3.start();
-      if(s4.valid) s4.start();
+      if(s0.valid&&s0.continue_sem){s0.start();cerr << "test" << endl; io_context[0].run();cerr << "test2" << endl;}
+      if(s1.valid&&s1.continue_sem) s1.start();
+      if(s2.valid&&s2.continue_sem) s2.start();
+      if(s3.valid&&s3.continue_sem) s3.start();
+      if(s4.valid&&s4.continue_sem) s4.start();
     }
     */
 	}

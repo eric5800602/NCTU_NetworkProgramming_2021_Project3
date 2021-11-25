@@ -1,3 +1,4 @@
+name 3
 removetag0 test.html | number |4
 noop
 noop

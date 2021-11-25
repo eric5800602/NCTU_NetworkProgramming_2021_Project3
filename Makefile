@@ -11,3 +11,4 @@ all: http_server.cpp
 
 clean:
 	rm -f http_server
+	rm -f console.cgi

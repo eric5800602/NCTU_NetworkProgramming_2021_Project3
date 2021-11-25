@@ -7,6 +7,7 @@
 #include <sstream>
 #include <fstream>
 #include <boost/algorithm/string.hpp>
+#include <boost/bind/bind.hpp>
 #include <vector>
 
 using namespace std;
@@ -20,7 +21,7 @@ struct client_info{
   string file;
 };
 
-boost::asio::io_service io_context[5];
+boost::asio::io_service io_context;
 client_info client[5];
 
 
@@ -58,8 +59,8 @@ class session
 : public std::enable_shared_from_this<session>
 {
 	public:
-		session(int index,string host, string port,string f)
-			: client_socket(io_context[index])
+		session(tcp::socket socket_,int index,string host, string port,string f)
+			: client_socket(std::move(socket_))
 		{
       if(host.length() == 0){
         valid = false;
@@ -67,14 +68,10 @@ class session
       }
       memset(data_,0,max_length);
       id = index;
-      valid = true;
-      continue_sem = true;
-      string filename = "./test_case/"+f;
+      filename = "./test_case/"+f;
       file_input.open(filename,ios::in);
-      tcp::resolver resolve(io_context[index]);
-      tcp::resolver::query query(host, port);
-      boost::asio::ip::tcp::resolver::iterator iter = resolve.resolve(query);
-      client_socket.async_connect(iter->endpoint(),[this](boost::system::error_code ec){if(!ec){start();}else{cerr << ec << endl;}});
+      all_msg = "";
+      //if ( file_input.fail() ) cerr << "open fail" << endl;
       add_row(index,host,port);
 		}
 		void start()
@@ -82,58 +79,58 @@ class session
 			do_read();
 		}
     bool valid;
-    bool continue_sem;
 
 	private:
 		void do_read()
 		{
-			//auto self(shared_from_this());
+			auto self(shared_from_this());
       client_socket.async_read_some(boost::asio::buffer(data_, max_length),
-          [this](boost::system::error_code ec, std::size_t length){
+          [this,self](boost::system::error_code ec, std::size_t length){
           if (!ec){
-            output_shell(id,string(data_));
-            if(file_input.eof()){
-              cerr << id << " eof" << endl;
-              valid = false;
-            }
-            char *ret;
-            ret = strstr(data_, "%");
-            memset(data_,0,max_length);
-            if(ret){
+            all_msg += data_;
+            memset(data_,0,length);
+            size_t pos;
+            if((pos = all_msg.find("%")) != string::npos){
+              output_shell(id,all_msg);
+              all_msg = "";
               do_write();
-            }else{
-              do_read();
             }
+            do_read();
           }
           });
 		}
 
 		void do_write()
 		{
-			//auto self(shared_from_this());
+			auto self(shared_from_this());
       string input;
-      getline(file_input,input);
+      //if(file_input.eof()) return;
+      if(!getline(file_input,input)){
+        cerr << "getline fail" << endl;
+      }
       input = input + "\n";
-      cerr << input << endl;
+      cerr << "input = "<< input << endl;
       output_command(id,input);
-      if(file_input.eof()) return;
       boost::asio::async_write(client_socket, boost::asio::buffer(input.c_str(), input.length()),
-        [this](boost::system::error_code ec, std::size_t /*length*/){
+        [this,self](boost::system::error_code ec, std::size_t /*length*/){
           if (!ec){
              /*
-            continue_sem = true;
             io_context[id].stop();
             io_context[id].reset();
             cerr << "test3" << endl;
             return;*/
-            do_read();
-        }});
+        }else{
+          cerr << ec << endl;
+        }
+        });
     }
 
 		tcp::socket client_socket;
 		enum { max_length = 1024 };
 		char data_[max_length];
+    string all_msg;
     ifstream file_input;
+    string filename;
     int id;
 };
 
@@ -191,6 +188,39 @@ void print_header(){
 </html>";
 }
 
+class server
+{
+  public:
+    server()
+    :resolve(io_context)
+    {
+      for(int i = 0;i < 5;i++){
+        if(client[i].host.length() !=0){
+          tcp::resolver::query query(client[i].host, client[i].port);
+          resolve.async_resolve(query,
+          boost::bind(&server::connection, this,i,boost::asio::placeholders::error,boost::asio::placeholders::iterator ));
+        }
+      }
+    }
+    void connection(const int i,const boost::system::error_code& err,const tcp::resolver::iterator it){
+      if (!err)
+      {
+        socket_[i] = new tcp::socket(io_context);
+        (*socket_[i]).async_connect(*it,
+        boost::bind(&server::create_session, this,i,boost::asio::placeholders::error,it ));
+      }
+    }
+    void create_session(const int i,const boost::system::error_code& err,const tcp::resolver::iterator it){
+      if (!err)
+      {
+          std::make_shared<session>(std::move(*socket_[i]),i,client[i].host, client[i].port,client[i].file)->start();
+      }
+    }
+  private:
+    tcp::socket *socket_[5];
+    tcp::resolver resolve;
+};
+
 int main(int argc, char* argv[]){
   try
 	{
@@ -246,28 +276,9 @@ int main(int argc, char* argv[]){
       cerr << "host: "<<client[j].host << endl;
       cerr << "port: "<<client[j].port << endl;
       cerr << "file: "<<client[j].file << endl;
-      session s(j,client[j].host, client[j].port,client[j].file);
-      io_context[j].run();
     }
-    /*
-    session s0(0,client[0].host, client[0].port,client[0].file);
-    session s1(1,client[1].host, client[1].port,client[1].file);
-    io_context[1].run();
-    session s2(2,client[2].host, client[2].port,client[2].file);
-    io_context[2].run();
-    session s3(3,client[3].host, client[3].port,client[3].file);
-    io_context[3].run();
-    session s4(4,client[4].host, client[4].port,client[4].file);
-    io_context[4].run();
-    while(true){
-      if(!(s0.valid || s1.valid || s2.valid || s3.valid || s4.valid)) break;
-      if(s0.valid&&s0.continue_sem){s0.start();cerr << "test" << endl; io_context[0].run();cerr << "test2" << endl;}
-      if(s1.valid&&s1.continue_sem) s1.start();
-      if(s2.valid&&s2.continue_sem) s2.start();
-      if(s3.valid&&s3.continue_sem) s3.start();
-      if(s4.valid&&s4.continue_sem) s4.start();
-    }
-    */
+    server server_obj;
+    io_context.run();
 	}
 	catch (std::exception& e)
 	{

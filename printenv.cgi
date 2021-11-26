@@ -13,7 +13,7 @@ env_variables = [
     'REMOTE_PORT'
 ]
 
-print('Content-type: text/plain', end='\r\n\r\n')
+print('Content-type: text/plain',end='\r\n\r\n')
 
 for var in env_variables:
     print(var, '=', os.getenv(var, ''))

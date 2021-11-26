@@ -27,7 +27,7 @@ class session
 {
 	public:
 		char REQUEST_METHOD[100];
-		char REQUEST_URI[100];
+		char REQUEST_URI[1124];
 		char QUERY_STRING[1024];
 		char SERVER_PROTOCOL[100];
 		char HTTP_HOST[100];
@@ -81,10 +81,9 @@ class session
 						} else {
 							io_context.notify_fork(io_service::fork_child);
 							/* Parse input env */
-							char tmp[1124];
 							std::stringstream ss;
 							sscanf(data_,"%s %s %s\n\rHost: %s\n",
-							REQUEST_METHOD,tmp,SERVER_PROTOCOL,HTTP_HOST);
+							REQUEST_METHOD,REQUEST_URI,SERVER_PROTOCOL,HTTP_HOST);
 							boost::asio::ip::tcp::endpoint remote_ep = socket_.remote_endpoint();
 							boost::asio::ip::address remote_ad = remote_ep.address();
 							client = remote_ad.to_string();
@@ -96,13 +95,14 @@ class session
 							server = server_ad.to_string();
 							ss << server_ep.port();
 							server_port = ss.str();
-							sscanf(tmp,"%[^?]?%s",REQUEST_URI,QUERY_STRING);
+							char process[100];
+							sscanf(REQUEST_URI,"%[^?]?%s",process,QUERY_STRING);
 							BOOST_SETENV();
 							/* hadle fd */
 							int sock = socket_.native_handle();
 							dup2(sock, STDIN_FILENO);
 							dup2(sock, STDOUT_FILENO);
-							string target_uri = string(REQUEST_URI);
+							string target_uri = string(process);
 							target_uri = "."+target_uri;
 							socket_.close();
 							if (target_uri != "./favicon.ico" && execlp(target_uri.c_str(), target_uri.c_str(), NULL) < 0) {
